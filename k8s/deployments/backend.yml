@@ -1,0 +1,48 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: llmflow-backend
+  labels:
+    app: llmflow
+    component: backend
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: llmflow
+      component: backend
+  template:
+    metadata:
+      labels:
+        app: llmflow
+        component: backend
+    spec:
+      containers:
+        - name: backend
+          image: ghcr.io/OWNER/llmflow-backend:latest
+          ports:
+            - containerPort: 8000
+          envFrom:
+            - configMapRef:
+                name: llmflow-config
+            - secretRef:
+                name: llmflow-secrets
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: 1000m
+              memory: 1Gi
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 30
+            periodSeconds: 30

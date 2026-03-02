@@ -1,0 +1,36 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: llmflow-frontend
+  labels:
+    app: llmflow
+    component: frontend
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: llmflow
+      component: frontend
+  template:
+    metadata:
+      labels:
+        app: llmflow
+        component: frontend
+    spec:
+      containers:
+        - name: frontend
+          image: ghcr.io/OWNER/llmflow-frontend:latest
+          ports:
+            - containerPort: 3000
+          env:
+            - name: NEXT_PUBLIC_API_URL
+              value: "http://llmflow-backend:8000"
+            - name: NEXT_PUBLIC_INFERENCE_URL
+              value: "http://llmflow-inference:8001"
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi

@@ -1,0 +1,42 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: llmflow-inference
+  labels:
+    app: llmflow
+    component: inference
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: llmflow
+      component: inference
+  template:
+    metadata:
+      labels:
+        app: llmflow
+        component: inference
+    spec:
+      containers:
+        - name: inference
+          image: ghcr.io/OWNER/llmflow-inference:latest
+          ports:
+            - containerPort: 8001
+          envFrom:
+            - configMapRef:
+                name: llmflow-config
+            - secretRef:
+                name: llmflow-secrets
+          resources:
+            requests:
+              cpu: 500m
+              memory: 2Gi
+            limits:
+              cpu: 4000m
+              memory: 8Gi
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8001
+            initialDelaySeconds: 30
+            periodSeconds: 10

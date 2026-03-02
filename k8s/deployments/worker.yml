@@ -1,0 +1,35 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: llmflow-worker
+  labels:
+    app: llmflow
+    component: worker
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: llmflow
+      component: worker
+  template:
+    metadata:
+      labels:
+        app: llmflow
+        component: worker
+    spec:
+      containers:
+        - name: worker
+          image: ghcr.io/OWNER/llmflow-backend:latest
+          command: ["celery", "-A", "app.workers.celery_app", "worker", "--loglevel=info"]
+          envFrom:
+            - configMapRef:
+                name: llmflow-config
+            - secretRef:
+                name: llmflow-secrets
+          resources:
+            requests:
+              cpu: 500m
+              memory: 2Gi
+            limits:
+              cpu: 4000m
+              memory: 8Gi

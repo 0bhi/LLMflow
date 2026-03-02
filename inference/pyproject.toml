@@ -1,0 +1,25 @@
+[project]
+name = "llmflow-inference"
+version = "0.1.0"
+description = "LLMflow Inference Server"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.30.0",
+    "redis>=5.1.0",
+    "pydantic>=2.9.0",
+    "pydantic-settings>=2.5.0",
+    "torch>=2.4.0",
+    "transformers>=4.44.0",
+    "peft>=0.12.0",
+    "bitsandbytes>=0.43.0",
+    "accelerate>=0.34.0",
+    "sse-starlette>=2.1.0",
+    "prometheus-client>=0.21.0",
+    "minio>=7.2.0",
+    "structlog>=24.4.0",
+]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
