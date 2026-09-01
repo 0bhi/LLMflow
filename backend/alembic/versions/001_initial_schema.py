@@ -182,7 +182,7 @@ def upgrade() -> None:
         sa.Column(
             "eval_type",
             sa.Enum(
-                "PERPLEXITY", "TASK_ACCURACY", "SELF_CONSISTENCY", "HUMAN",
+                "PERPLEXITY", "TASK_ACCURACY", "CLASSIFICATION", "SELF_CONSISTENCY", "HUMAN",
                 name="evaltype",
             ),
             nullable=False,

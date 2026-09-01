@@ -91,6 +91,12 @@ export const api = {
     request<any>(`${API_URL}/api/v1/evaluations/compare`, { method: "POST", body: JSON.stringify(data) }),
   createRating: (data: any) =>
     request<any>(`${API_URL}/api/v1/evaluations/ratings`, { method: "POST", body: JSON.stringify(data) }),
+  listRatings: (inferenceLogId?: number) => {
+    const params = inferenceLogId ? `?inference_log_id=${inferenceLogId}` : "";
+    return request<any[]>(`${API_URL}/api/v1/evaluations/ratings${params}`);
+  },
+  listInferenceLogs: (skip = 0, limit = 20) =>
+    request<any[]>(`${API_URL}/api/v1/serving/inference-logs?skip=${skip}&limit=${limit}`),
 
   // Serving
   listDeployments: () => request<any[]>(`${API_URL}/api/v1/serving/deployments`),

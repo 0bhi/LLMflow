@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Button } from "@/components/ui/button";
 import { StatusBadge } from "@/components/ui/badge";
 import { api } from "@/lib/api";
-import { Rocket, Send, Undo2, Network, Copy, Check, RefreshCw } from "lucide-react";
+import { Rocket, Send, Undo2, Network, Copy, Check, RefreshCw, Star } from "lucide-react";
 
 function alpacaPrompt(instruction: string, input = "") {
   let text = `### Instruction:\n${instruction}`;
@@ -73,8 +73,10 @@ export default function ServingPage() {
       tokens_out: number;
       cached: boolean;
       placeholder: boolean;
+      inference_log_id: number | null;
     },
   });
+  const [rating, setRating] = useState({ score: 4, dimension: "overall", feedback: "", saved: false });
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
   const [reloading, setReloading] = useState<number | null>(null);
@@ -138,6 +140,16 @@ export default function ServingPage() {
     setLineage(data);
   };
 
+  const handleStage = async (id: number, stage: string) => {
+    setError(null);
+    try {
+      await api.updateDeployment(id, { stage });
+      load();
+    } catch (e: any) {
+      setError(e.message || "Failed to update stage");
+    }
+  };
+
   const handleSanity = async (dep: any) => {
     setSanity((s) => ({ ...s, [dep.id]: "checking" }));
     try {
@@ -180,14 +192,16 @@ export default function ServingPage() {
           tokens_out: result.tokens_out,
           cached: !!result.cached,
           placeholder,
+          inference_log_id: result.inference_log_id ?? null,
         },
       });
+      setRating({ score: 4, dimension: "overall", feedback: "", saved: false });
     } catch (e: any) {
       setPlayground({
         ...playground,
         loading: false,
         response: "",
-        meta: { latency_ms: 0, tokens_in: 0, tokens_out: 0, cached: false, placeholder: true },
+        meta: { latency_ms: 0, tokens_in: 0, tokens_out: 0, cached: false, placeholder: true, inference_log_id: null },
       });
       setError(e.message || "Generate failed");
     }
@@ -268,10 +282,22 @@ export default function ServingPage() {
                 <StatusBadge status={dep.status} />
               </div>
               <CardDescription>
-                v{dep.version} &middot; {dep.traffic_pct}% traffic &middot; {dep.stage}
+                v{dep.version} &middot; {dep.traffic_pct}% traffic
               </CardDescription>
             </CardHeader>
             <CardContent>
+              <div className="flex flex-wrap gap-1 mb-3">
+                {(["staging", "production", "archived"] as const).map((stage) => (
+                  <Button
+                    key={stage}
+                    size="sm"
+                    variant={dep.stage === stage ? "default" : "outline"}
+                    onClick={() => handleStage(dep.id, stage)}
+                  >
+                    {stage}
+                  </Button>
+                ))}
+              </div>
               <div className="flex flex-wrap gap-2">
                 <Button size="sm" variant="outline" onClick={() => handleLineage(dep.id)}>
                   <Network className="mr-1 h-3 w-3" /> Lineage
@@ -427,6 +453,58 @@ export default function ServingPage() {
             <div>
               <div className="text-xs font-medium text-muted-foreground mb-1">Gold (from demo dataset)</div>
               <div className="rounded-lg border p-4 text-sm text-muted-foreground">{playground.gold}</div>
+            </div>
+          )}
+          {playground.meta && !playground.meta.placeholder && playground.meta.inference_log_id && (
+            <div className="rounded-lg border p-4 space-y-3">
+              <div className="text-sm font-medium flex items-center gap-2">
+                <Star className="h-4 w-4" /> Rate this completion
+              </div>
+              <div className="flex gap-1">
+                {[1, 2, 3, 4, 5].map((n) => (
+                  <button
+                    key={n}
+                    type="button"
+                    className={n <= rating.score ? "text-yellow-500" : "text-muted-foreground"}
+                    onClick={() => setRating({ ...rating, score: n, saved: false })}
+                  >
+                    <Star className="h-5 w-5" fill={n <= rating.score ? "currentColor" : "none"} />
+                  </button>
+                ))}
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <select
+                  className="rounded-md border bg-background px-3 py-2 text-sm"
+                  value={rating.dimension}
+                  onChange={(e) => setRating({ ...rating, dimension: e.target.value, saved: false })}
+                >
+                  <option value="overall">Overall</option>
+                  <option value="helpfulness">Helpfulness</option>
+                  <option value="faithfulness">Faithfulness</option>
+                </select>
+                <input
+                  className="rounded-md border bg-background px-3 py-2 text-sm"
+                  placeholder="Optional note"
+                  value={rating.feedback}
+                  onChange={(e) => setRating({ ...rating, feedback: e.target.value, saved: false })}
+                />
+              </div>
+              <Button
+                size="sm"
+                disabled={rating.saved}
+                onClick={async () => {
+                  await api.createRating({
+                    inference_log_id: playground.meta!.inference_log_id,
+                    rater_id: "playground",
+                    score: rating.score,
+                    dimension: rating.dimension,
+                    feedback: rating.feedback || null,
+                  });
+                  setRating({ ...rating, saved: true });
+                }}
+              >
+                {rating.saved ? "Saved" : "Submit rating"}
+              </Button>
             </div>
           )}
         </CardContent>

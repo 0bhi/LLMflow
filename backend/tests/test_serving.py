@@ -118,3 +118,38 @@ class TestInferenceLogAndCost:
 
         stored = await db.get(InferenceLog, row.id)
         assert stored.completion == "world"
+
+
+class TestStopUnloadsModel:
+    async def test_delete_unloads_and_zeros_traffic(self, db):
+        run = await _completed_run(db)
+        inference = MagicMock()
+        inference.load_model = AsyncMock(return_value={"status": "loaded"})
+        inference.unload_model = AsyncMock(return_value={"status": "unloaded"})
+        inference.set_route = AsyncMock()
+
+        svc = DeploymentService(db, inference=inference)
+        dep = await svc.create(
+            DeploymentCreate(name="unload-me", training_run_id=run.id, version="1.0.0", traffic_pct=80)
+        )
+        await svc.delete(dep.id)
+
+        assert dep.status == DeploymentStatus.STOPPED
+        assert dep.traffic_pct == 0.0
+        inference.unload_model.assert_awaited_once_with("unload-me")
+
+
+class TestRegistryStage:
+    async def test_update_stage(self, db):
+        from app.models.deployment import ModelStage
+        from app.schemas.serving import DeploymentUpdate
+
+        run = await _completed_run(db)
+        inference = MagicMock()
+        inference.load_model = AsyncMock(return_value={"status": "loaded"})
+        svc = DeploymentService(db, inference=inference)
+        dep = await svc.create(
+            DeploymentCreate(name="staged", training_run_id=run.id, version="1.0.0", traffic_pct=100)
+        )
+        updated = await svc.update(dep.id, DeploymentUpdate(stage=ModelStage.PRODUCTION))
+        assert updated.stage == ModelStage.PRODUCTION

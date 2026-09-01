@@ -36,3 +36,12 @@ class InferenceClient:
             )
             resp.raise_for_status()
             return resp.json()
+
+    async def unload_model(self, model_name: str) -> dict:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.post(
+                f"{self.base_url}/admin/models/unload",
+                json={"model_name": model_name},
+            )
+            resp.raise_for_status()
+            return resp.json()

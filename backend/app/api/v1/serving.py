@@ -75,6 +75,16 @@ async def create_inference_log(payload: InferenceLogCreate, db: DBSession):
         raise HTTPException(400, str(e)) from e
 
 
+@router.get("/inference-logs", response_model=list[InferenceLogResponse])
+async def list_inference_logs(
+    db: DBSession,
+    skip: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=200),
+):
+    svc = InferenceLogService(db)
+    return await svc.list_recent(skip=skip, limit=limit)
+
+
 @router.get("/lineage/{deployment_id}")
 async def get_lineage(deployment_id: int, db: DBSession):
     svc = DeploymentService(db)

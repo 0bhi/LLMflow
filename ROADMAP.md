@@ -123,7 +123,7 @@ Drop: labeling, streaming, batching, parquet, k8s-as-production, blind eval, “
 3. Playground uses that model; demo script deploys then queries
 4. README + nav copy match reality
 
-### Phase B — features that are already ~80% done
+### Phase B — features that are already ~80% done (done)
 
 5. Sweep UI
 6. Classification F1 wire-up **or** README cut

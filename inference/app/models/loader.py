@@ -106,6 +106,12 @@ class ModelManager:
             "deployed_model_id": self._deployed_ids.get(model_name),
         }
 
+    def unload_model(self, model_name: str) -> None:
+        self._models.pop(model_name, None)
+        self._tokenizers.pop(model_name, None)
+        self._deployed_ids.pop(model_name, None)
+        logger.info("model_unloaded", model_name=model_name)
+
     def is_loaded(self, model_name: str) -> bool:
         return model_name in self._models
 

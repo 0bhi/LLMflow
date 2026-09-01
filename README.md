@@ -43,25 +43,32 @@ Docker Compose demo trains GPT-2 end-to-end, deploys the adapter, and queries it
 ### Training
 - **LoRA fine-tuning** — PEFT + Transformers (optional 4-bit QLoRA on GPU)
 - **Reproducibility** — Seed locking, config snapshots, dataset hash check, re-run
+- **Hyperparameter sweep** — Grid or random over a param JSON, capped by max runs
 - **Experiment tracking** — MLflow params and metrics; model weights stored in MinIO
 - **Cost tracking** — GPU hours × rate per training run
 
 ### Evaluation
 - **Perplexity** on held-out test sets
-- **QA exact-match** and **self-consistency**
+- **QA exact-match** and **classification F1** (macro)
+- **Self-consistency**
+- **Human ratings** from the playground (stars + dimension on a real inference log)
 - **Split enforcement** — API rejects evals on train splits; hash mismatch blocks leakage
 
 ### Serving
 - **Deploy a completed run** — Inference downloads the MinIO artifact and loads the PEFT model
 - **A/B traffic %** — Registered on the inference router when you deploy
 - **Redis response cache**
-- **Playground** — Prompts the loaded model
+- **Playground** — Prompts the loaded model; rate the completion afterward
+- **Registry stages** — Staging / Production / Archived
+- **Stop** — Unloads the model and zeros traffic
 - **Lineage chain** — Dataset → Experiment → Run → Artifact → Deployment
 - **Inference logs + cost** — Each completion writes a log and tokens × rate
 
 ### Monitoring
-- Prometheus scrapes inference `/metrics`
+- Prometheus scrapes backend and inference `/metrics`
+- Grafana provisions a Prometheus datasource and the bundled dashboard
 - Cost APIs aggregate training GPU cost and inference token cost from logs
+- Monitoring page charts cost and latency (Recharts); error rate is placeholders / total logs
 
 ### Infra
 - Docker Compose, GitHub Actions (lint/test/build), in-memory rate limiter, JSON logs via structlog
@@ -73,7 +80,7 @@ Docker Compose demo trains GPT-2 end-to-end, deploys the adapter, and queries it
 | Backend | Python 3.11, FastAPI, SQLAlchemy 2.0, Alembic, Celery, Pydantic v2 |
 | ML | PyTorch, HuggingFace Transformers, PEFT |
 | Tracking | MLflow (experiments), MinIO (weights) |
-| Frontend | Next.js 16, TypeScript, Tailwind CSS, Lucide Icons |
+| Frontend | Next.js 16, TypeScript, Tailwind CSS, Lucide Icons, Recharts |
 | Database | PostgreSQL 16, Redis 7, MinIO (S3-compatible) |
 | Monitoring | Prometheus, Grafana |
 | Infra | Docker Compose, GitHub Actions |
@@ -195,6 +202,8 @@ LLMflow/
 - `GET /api/v1/serving/lineage/{id}` — Lineage chain
 - `POST /v1/completions` — Inference (on inference server)
 - `POST /admin/models/load` — Load artifact (inference server)
+- `POST /admin/models/unload` — Unload model (inference server)
+- `PATCH /api/v1/serving/deployments/{id}` — Traffic, status, or stage
 
 ### Monitoring
 - `GET /api/v1/monitoring/costs/summary` — Cost breakdown

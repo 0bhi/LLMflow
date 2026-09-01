@@ -11,3 +11,11 @@ async def test_health_endpoint():
     assert response.status_code == 200
     data = response.json()
     assert data["status"] == "healthy"
+
+
+@pytest.mark.asyncio
+async def test_metrics_endpoint():
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get("/metrics")
+    assert response.status_code == 200
+    assert "python_info" in response.text or "process_" in response.text

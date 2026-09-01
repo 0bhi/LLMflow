@@ -94,9 +94,12 @@ class DeploymentService:
         if dep:
             dep.status = DeploymentStatus.STOPPED
             try:
-                await self.inference.set_route(dep.name, 0.0)
+                await self.inference.unload_model(dep.name)
             except (httpx.HTTPError, httpx.RequestError):
-                pass
+                try:
+                    await self.inference.set_route(dep.name, 0.0)
+                except (httpx.HTTPError, httpx.RequestError):
+                    pass
             dep.traffic_pct = 0.0
             await self.db.flush()
 

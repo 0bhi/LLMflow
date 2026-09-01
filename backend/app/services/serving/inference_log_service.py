@@ -1,5 +1,7 @@
 import hashlib
 
+from collections.abc import Sequence
+
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -62,3 +64,9 @@ class InferenceLogService:
         )
         await self.db.flush()
         return log
+
+    async def list_recent(self, skip: int = 0, limit: int = 50) -> Sequence[InferenceLog]:
+        result = await self.db.execute(
+            select(InferenceLog).offset(skip).limit(limit).order_by(InferenceLog.created_at.desc())
+        )
+        return result.scalars().all()

@@ -65,6 +65,7 @@ class InferenceResponse(BaseModel):
     tokens_out: int
     latency_ms: float
     cached: bool = False
+    inference_log_id: int | None = None
 
 
 class LoadModelRequest(BaseModel):
@@ -74,6 +75,12 @@ class LoadModelRequest(BaseModel):
     artifact_path: str
     traffic_pct: float = Field(100.0, ge=0.0, le=100.0)
     deployed_model_id: int | None = None
+
+
+class UnloadModelRequest(BaseModel):
+    model_config = {"protected_namespaces": ()}
+
+    model_name: str
 
 
 class RouteRequest(BaseModel):
@@ -90,9 +97,9 @@ async def _log_completion(
     tokens_out: int,
     latency_ms: float,
     deployed_model_id: int | None,
-) -> None:
+) -> int | None:
     if not settings.backend_url:
-        return
+        return None
     payload = {
         "model_name": model_name,
         "prompt": prompt,
@@ -104,12 +111,15 @@ async def _log_completion(
     }
     try:
         async with httpx.AsyncClient(timeout=5.0) as client:
-            await client.post(
+            resp = await client.post(
                 f"{settings.backend_url.rstrip('/')}/api/v1/serving/inference-logs",
                 json=payload,
             )
+            if resp.is_success:
+                return resp.json().get("id")
     except Exception as exc:
         logger.warning("inference_log_failed", error=str(exc))
+    return None
 
 
 @app.post("/v1/completions", response_model=InferenceResponse)
@@ -125,7 +135,7 @@ async def create_completion(request: InferenceRequest):
         cached_response.get("completion", "")
     ):
         REQUEST_COUNT.labels(model=model_name).inc()
-        await _log_completion(
+        log_id = await _log_completion(
             model_name=model_name,
             prompt=request.prompt,
             completion=cached_response["completion"],
@@ -135,8 +145,13 @@ async def create_completion(request: InferenceRequest):
             deployed_model_id=cached_response.get("deployed_model_id"),
         )
         return InferenceResponse(
-            **{k: v for k, v in cached_response.items() if k != "deployed_model_id"},
+            completion=cached_response["completion"],
+            model=cached_response.get("model", model_name),
+            tokens_in=cached_response["tokens_in"],
+            tokens_out=cached_response["tokens_out"],
+            latency_ms=cached_response.get("latency_ms", 0),
             cached=True,
+            inference_log_id=log_id,
         )
     if cached_response:
         await cache.invalidate(prompt_hash)
@@ -165,7 +180,7 @@ async def create_completion(request: InferenceRequest):
 
     if not result.get("placeholder"):
         await cache.set(prompt_hash, response_data, ttl=3600)
-    await _log_completion(
+    log_id = await _log_completion(
         model_name=model_name,
         prompt=request.prompt,
         completion=result["completion"],
@@ -181,6 +196,7 @@ async def create_completion(request: InferenceRequest):
         tokens_in=response_data["tokens_in"],
         tokens_out=response_data["tokens_out"],
         latency_ms=response_data["latency_ms"],
+        inference_log_id=log_id,
     )
 
 
@@ -201,6 +217,17 @@ async def load_model(payload: LoadModelRequest):
         "status": "loaded",
         "model_name": payload.model_name,
         "traffic_pct": payload.traffic_pct,
+        "models_loaded": model_manager.list_loaded(),
+    }
+
+
+@app.post("/admin/models/unload")
+async def unload_model(payload: UnloadModelRequest):
+    model_manager.unload_model(payload.model_name)
+    ab_router.remove_route(payload.model_name)
+    return {
+        "status": "unloaded",
+        "model_name": payload.model_name,
         "models_loaded": model_manager.list_loaded(),
     }
 

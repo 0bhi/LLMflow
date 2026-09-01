@@ -66,9 +66,12 @@ class InferenceLogResponse(BaseModel):
     id: int
     deployed_model_id: int
     prompt_hash: str
+    prompt: str
+    completion: str
     latency_ms: float
     tokens_in: int
     tokens_out: int
     cost_usd: float
+    created_at: datetime | None = None
 
     model_config = {"from_attributes": True}

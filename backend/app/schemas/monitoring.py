@@ -40,7 +40,13 @@ class MetricsSummary(BaseModel):
     tokens_per_second: float
 
 
+class QualityPoint(BaseModel):
+    date: str
+    avg_score: float
+
+
 class QualityMetrics(BaseModel):
     avg_human_score: float
     total_ratings: int
     score_by_dimension: dict[str, float]
+    score_over_time: list[QualityPoint] = []

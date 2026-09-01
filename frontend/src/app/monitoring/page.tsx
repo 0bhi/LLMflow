@@ -1,6 +1,17 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
+import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Line,
+  LineChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { api } from "@/lib/api";
 import { formatCost } from "@/lib/utils";
@@ -29,11 +40,19 @@ export default function MonitoringPage() {
 
   useEffect(() => { load(); }, [load]);
 
+  const latencyChart = metrics
+    ? [
+        { name: "avg", ms: metrics.avg_latency_ms ?? 0 },
+        { name: "p95", ms: metrics.p95_latency_ms ?? 0 },
+        { name: "p99", ms: metrics.p99_latency_ms ?? 0 },
+      ]
+    : [];
+
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-3xl font-bold tracking-tight">Monitoring</h1>
-        <p className="text-muted-foreground mt-1">Latency, cost, and quality metrics</p>
+        <p className="text-muted-foreground mt-1">Latency, cost, and quality from request logs</p>
       </div>
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
@@ -97,19 +116,16 @@ export default function MonitoringPage() {
             {modelCosts.length === 0 ? (
               <p className="text-sm text-muted-foreground">No inference data yet.</p>
             ) : (
-              <div className="space-y-3">
-                {modelCosts.map((mc) => (
-                  <div key={mc.deployment_id} className="flex items-center justify-between rounded-lg border p-3">
-                    <div>
-                      <div className="font-medium">{mc.model_name}</div>
-                      <div className="text-xs text-muted-foreground">{mc.total_requests.toLocaleString()} requests</div>
-                    </div>
-                    <div className="text-right">
-                      <div className="font-medium">{formatCost(mc.total_cost_usd)}</div>
-                      <div className="text-xs text-muted-foreground">{formatCost(mc.cost_per_1k_requests)}/1k req</div>
-                    </div>
-                  </div>
-                ))}
+              <div className="h-64">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={modelCosts}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis dataKey="model_name" tick={{ fontSize: 12 }} />
+                    <YAxis tick={{ fontSize: 12 }} />
+                    <Tooltip formatter={(v: number) => formatCost(v)} />
+                    <Bar dataKey="total_cost_usd" fill="hsl(221, 83%, 53%)" name="Cost (USD)" />
+                  </BarChart>
+                </ResponsiveContainer>
               </div>
             )}
           </CardContent>
@@ -122,7 +138,7 @@ export default function MonitoringPage() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="space-y-3">
+            <div className="space-y-3 mb-4">
               <div className="flex items-center justify-between rounded-lg border p-3">
                 <span className="text-sm">Total Requests</span>
                 <span className="font-medium">{metrics?.total_requests?.toLocaleString() ?? "—"}</span>
@@ -136,9 +152,41 @@ export default function MonitoringPage() {
                 <span className="font-medium">{metrics?.tokens_per_second?.toFixed(1) ?? "—"}</span>
               </div>
             </div>
+            {latencyChart.some((d) => d.ms > 0) && (
+              <div className="h-40">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={latencyChart}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis dataKey="name" tick={{ fontSize: 12 }} />
+                    <YAxis tick={{ fontSize: 12 }} />
+                    <Tooltip formatter={(v: number) => `${v.toFixed(0)}ms`} />
+                    <Bar dataKey="ms" fill="hsl(199, 89%, 48%)" name="Latency" />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            )}
           </CardContent>
         </Card>
       </div>
+
+      {quality && (quality.score_over_time || []).length > 0 && (
+        <Card>
+          <CardHeader><CardTitle className="text-lg">Quality over time</CardTitle></CardHeader>
+          <CardContent>
+            <div className="h-64">
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={quality.score_over_time}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="date" tick={{ fontSize: 12 }} />
+                  <YAxis domain={[0, 5]} tick={{ fontSize: 12 }} />
+                  <Tooltip />
+                  <Line type="monotone" dataKey="avg_score" stroke="hsl(271, 81%, 56%)" name="Avg rating" />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {quality && Object.keys(quality.score_by_dimension || {}).length > 0 && (
         <Card>
