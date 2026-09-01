@@ -131,6 +131,8 @@ services:
     depends_on:
       redis:
         condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
 
   frontend:
     build:

@@ -12,7 +12,8 @@ Walks through the full pipeline:
   4. Wait for training to complete
   5. Run perplexity evaluation on test split
   6. Wait for eval to complete
-  7. Print results summary
+  7. Deploy the completed run to the inference server
+  8. Query the loaded model
 """
 
 import argparse
@@ -52,7 +53,7 @@ def main():
     # ------------------------------------------------------------------ #
     # 1. Create dataset
     # ------------------------------------------------------------------ #
-    print("\n[1/7] Creating dataset...")
+    print("\n[1/8] Creating dataset...")
     ds = api(base, "post", "/api/v1/datasets", json={
         "name": f"alpaca-demo-{int(time.time())}",
         "description": "Small instruction-following demo dataset",
@@ -64,7 +65,7 @@ def main():
     # ------------------------------------------------------------------ #
     # 2. Upload version
     # ------------------------------------------------------------------ #
-    print("\n[2/7] Uploading dataset version...")
+    print("\n[2/8] Uploading dataset version...")
     with open(DEMO_DATASET, "rb") as f:
         ver = api(base, "post", f"/api/v1/datasets/{ds_id}/upload",
                   files={"file": ("alpaca_demo.jsonl", f, "application/json")})
@@ -75,7 +76,7 @@ def main():
     # ------------------------------------------------------------------ #
     # 3. Create splits
     # ------------------------------------------------------------------ #
-    print("\n[3/7] Creating train/val/test splits...")
+    print("\n[3/8] Creating train/val/test splits...")
     splits = api(base, "post",
                  f"/api/v1/datasets/{ds_id}/versions/{ver['version']}/split",
                  json={"train_ratio": 0.7, "val_ratio": 0.15, "test_ratio": 0.15, "seed": 42})
@@ -88,7 +89,7 @@ def main():
     # ------------------------------------------------------------------ #
     # 4. Create experiment + training run
     # ------------------------------------------------------------------ #
-    print("\n[4/7] Creating experiment and launching training...")
+    print("\n[4/8] Creating experiment and launching training...")
     exp = api(base, "post", "/api/v1/training/experiments", json={
         "name": f"demo-finetune-{int(time.time())}",
         "base_model": "gpt2",
@@ -117,7 +118,7 @@ def main():
     # ------------------------------------------------------------------ #
     # 5. Wait for training
     # ------------------------------------------------------------------ #
-    print("\n[5/7] Waiting for training to complete...")
+    print("\n[5/8] Waiting for training to complete...")
     elapsed = 0
     while elapsed < MAX_WAIT:
         r = api(base, "get", f"/api/v1/training/experiments/{exp_id}")
@@ -148,7 +149,7 @@ def main():
     # ------------------------------------------------------------------ #
     # 6. Run perplexity evaluation
     # ------------------------------------------------------------------ #
-    print("\n[6/7] Running perplexity evaluation on test split...")
+    print("\n[6/8] Running perplexity evaluation on test split...")
     ev = api(base, "post", "/api/v1/evaluations", json={
         "training_run_id": run_id,
         "eval_type": "perplexity",
@@ -182,24 +183,36 @@ def main():
         sys.exit(1)
 
     # ------------------------------------------------------------------ #
-    # 7. Query the inference server
+    # 7. Deploy the trained run
     # ------------------------------------------------------------------ #
-    print("\n[7/7] Querying inference server...")
-    try:
-        inf_resp = requests.post(f"{inference_base}/v1/completions", json={
-            "prompt": "### Instruction:\nExplain what machine learning is.\n### Response:\n",
-            "max_tokens": 100,
-            "temperature": 0.7,
-        }, timeout=30)
-        if inf_resp.status_code == 200:
-            data = inf_resp.json()
-            print(f"  Model: {data.get('model', 'N/A')}")
-            print(f"  Completion: {data.get('completion', 'N/A')[:200]}")
-            print(f"  Latency: {data.get('latency_ms', 'N/A')}ms")
-        else:
-            print(f"  Inference server returned {inf_resp.status_code} (model may not be loaded)")
-    except requests.exceptions.ConnectionError:
-        print("  Inference server not reachable (skipping — deploy a model first)")
+    deploy_name = f"demo-gpt2-{run_id}"
+    print("\n[7/8] Deploying trained model...")
+    dep = api(base, "post", "/api/v1/serving/deployments", json={
+        "name": deploy_name,
+        "training_run_id": run_id,
+        "version": "1.0.0",
+        "traffic_pct": 100,
+    })
+    print(f"  Deployment id={dep['id']} status={dep['status']} name={dep['name']}")
+
+    # ------------------------------------------------------------------ #
+    # 8. Query the inference server
+    # ------------------------------------------------------------------ #
+    print("\n[8/8] Querying inference server...")
+    inf_resp = requests.post(f"{inference_base}/v1/completions", json={
+        "prompt": "### Instruction:\nExplain what machine learning is.\n### Response:\n",
+        "max_tokens": 100,
+        "temperature": 0.7,
+        "model": deploy_name,
+    }, timeout=120)
+    if inf_resp.status_code != 200:
+        print(f"  ERROR {inf_resp.status_code}: {inf_resp.text}")
+        sys.exit(1)
+    data = inf_resp.json()
+    print(f"  Model: {data.get('model', 'N/A')}")
+    print(f"  Completion: {data.get('completion', 'N/A')[:200]}")
+    print(f"  Latency: {data.get('latency_ms', 'N/A')}ms")
+    print(f"  Tokens: {data.get('tokens_in', 'N/A')} in / {data.get('tokens_out', 'N/A')} out")
 
     # ------------------------------------------------------------------ #
     # Summary
@@ -212,6 +225,7 @@ def main():
   Experiment: id={exp_id}, model=gpt2
   Run:        id={run_id}, status=completed
   Eval:       id={eval_id}, type=perplexity
+  Deploy:     id={dep['id']}, name={deploy_name}, status={dep['status']}
 
   Dashboards:
     Frontend:   http://localhost:3000

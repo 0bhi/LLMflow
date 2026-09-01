@@ -4,14 +4,23 @@ from app.models.loader import ModelManager
 
 
 class RequestBatcher:
-    """Collects inference requests within a time window and batches them."""
+    """Serializes generate calls. Queue/window batching is not implemented."""
 
-    def __init__(self, max_batch_size: int = 8, max_wait_ms: float = 50.0):
+    def __init__(
+        self,
+        model_manager: ModelManager | None = None,
+        max_batch_size: int = 8,
+        max_wait_ms: float = 50.0,
+    ):
         self.max_batch_size = max_batch_size
         self.max_wait_ms = max_wait_ms
         self._queue: asyncio.Queue = asyncio.Queue()
-        self._model_manager = ModelManager()
+        self._model_manager = model_manager or ModelManager()
         self._lock = asyncio.Lock()
+
+    @property
+    def model_manager(self) -> ModelManager:
+        return self._model_manager
 
     async def process(
         self,

@@ -48,3 +48,27 @@ class InferenceResponse(BaseModel):
     latency_ms: float
     model_name: str
     cost_usd: float
+
+
+class InferenceLogCreate(BaseModel):
+    model_config = {"protected_namespaces": ()}
+
+    model_name: str
+    prompt: str
+    completion: str
+    tokens_in: int
+    tokens_out: int
+    latency_ms: float
+    deployed_model_id: int | None = None
+
+
+class InferenceLogResponse(BaseModel):
+    id: int
+    deployed_model_id: int
+    prompt_hash: str
+    latency_ms: float
+    tokens_in: int
+    tokens_out: int
+    cost_usd: float
+
+    model_config = {"from_attributes": True}

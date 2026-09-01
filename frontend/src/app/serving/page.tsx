@@ -3,28 +3,44 @@
 import { useEffect, useState, useCallback } from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Badge, StatusBadge } from "@/components/ui/badge";
+import { StatusBadge } from "@/components/ui/badge";
 import { api } from "@/lib/api";
-import { formatDate, formatCost } from "@/lib/utils";
-import { Rocket, Send, Undo2, Network, DollarSign } from "lucide-react";
+import { Rocket, Send, Undo2, Network } from "lucide-react";
 
 export default function ServingPage() {
   const [deployments, setDeployments] = useState<any[]>([]);
   const [showCreate, setShowCreate] = useState(false);
   const [lineage, setLineage] = useState<any | null>(null);
   const [form, setForm] = useState({ name: "", training_run_id: 1, version: "1.0.0", traffic_pct: 100 });
-  const [playground, setPlayground] = useState({ prompt: "", response: "", loading: false });
+  const [playground, setPlayground] = useState({ prompt: "", response: "", loading: false, model: "" });
+  const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
-    try { setDeployments(await api.listDeployments()); } catch {}
+    try {
+      const list = await api.listDeployments();
+      setDeployments(list);
+      setPlayground((p) => {
+        if (p.model) return p;
+        const active = list.find((d: any) => d.status === "active");
+        return { ...p, model: active?.name || "" };
+      });
+    } catch {}
   }, []);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    load();
+  }, [load]);
 
   const handleCreate = async () => {
-    await api.createDeployment(form);
-    setShowCreate(false);
-    load();
+    setError(null);
+    try {
+      const dep = await api.createDeployment(form);
+      setShowCreate(false);
+      setPlayground((p) => ({ ...p, model: dep.name }));
+      load();
+    } catch (e: any) {
+      setError(e.message || "Deploy failed");
+    }
   };
 
   const handleDelete = async (id: number) => {
@@ -40,7 +56,12 @@ export default function ServingPage() {
   const handleInfer = async () => {
     setPlayground({ ...playground, loading: true, response: "" });
     try {
-      const result = await api.complete({ prompt: playground.prompt, max_tokens: 256, temperature: 0.7 });
+      const result = await api.complete({
+        prompt: playground.prompt,
+        max_tokens: 256,
+        temperature: 0.7,
+        model: playground.model || undefined,
+      });
       setPlayground({ ...playground, response: result.completion, loading: false });
     } catch (e: any) {
       setPlayground({ ...playground, response: `Error: ${e.message}`, loading: false });
@@ -52,26 +73,62 @@ export default function ServingPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Serving</h1>
-          <p className="text-muted-foreground mt-1">Deploy models, A/B testing, and model lineage</p>
+          <p className="text-muted-foreground mt-1">
+            Deploy a trained run, split traffic, and query the loaded model
+          </p>
         </div>
         <Button onClick={() => setShowCreate(true)}>
           <Rocket className="mr-2 h-4 w-4" /> New Deployment
         </Button>
       </div>
 
+      {error && (
+        <div className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+          {error}
+        </div>
+      )}
+
       {showCreate && (
         <Card>
-          <CardHeader><CardTitle className="text-lg">Deploy Model</CardTitle></CardHeader>
+          <CardHeader>
+            <CardTitle className="text-lg">Deploy Model</CardTitle>
+          </CardHeader>
           <CardContent className="space-y-4">
             <div className="grid grid-cols-4 gap-4">
-              <input className="rounded-md border bg-background px-3 py-2 text-sm" placeholder="Name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
-              <input type="number" className="rounded-md border bg-background px-3 py-2 text-sm" placeholder="Training Run ID" value={form.training_run_id} onChange={(e) => setForm({ ...form, training_run_id: parseInt(e.target.value) })} />
-              <input className="rounded-md border bg-background px-3 py-2 text-sm" placeholder="Version" value={form.version} onChange={(e) => setForm({ ...form, version: e.target.value })} />
-              <input type="number" className="rounded-md border bg-background px-3 py-2 text-sm" placeholder="Traffic %" value={form.traffic_pct} onChange={(e) => setForm({ ...form, traffic_pct: parseFloat(e.target.value) })} />
+              <input
+                className="rounded-md border bg-background px-3 py-2 text-sm"
+                placeholder="Name"
+                value={form.name}
+                onChange={(e) => setForm({ ...form, name: e.target.value })}
+              />
+              <input
+                type="number"
+                className="rounded-md border bg-background px-3 py-2 text-sm"
+                placeholder="Training Run ID"
+                value={form.training_run_id}
+                onChange={(e) => setForm({ ...form, training_run_id: parseInt(e.target.value) })}
+              />
+              <input
+                className="rounded-md border bg-background px-3 py-2 text-sm"
+                placeholder="Version"
+                value={form.version}
+                onChange={(e) => setForm({ ...form, version: e.target.value })}
+              />
+              <input
+                type="number"
+                className="rounded-md border bg-background px-3 py-2 text-sm"
+                placeholder="Traffic %"
+                value={form.traffic_pct}
+                onChange={(e) => setForm({ ...form, traffic_pct: parseFloat(e.target.value) })}
+              />
             </div>
             <div className="flex gap-2">
-              <Button onClick={handleCreate}>Deploy</Button>
-              <Button variant="outline" onClick={() => setShowCreate(false)}>Cancel</Button>
+              <Button onClick={handleCreate} disabled={!form.name}>
+                Deploy
+              </Button>
+              <Button variant="outline" onClick={() => setShowCreate(false)}>
+                Cancel
+              </Button>
             </div>
           </CardContent>
         </Card>
@@ -85,15 +142,24 @@ export default function ServingPage() {
                 <CardTitle className="text-base">{dep.name}</CardTitle>
                 <StatusBadge status={dep.status} />
               </div>
-              <CardDescription>v{dep.version} &middot; {dep.traffic_pct}% traffic &middot; {dep.stage}</CardDescription>
+              <CardDescription>
+                v{dep.version} &middot; {dep.traffic_pct}% traffic &middot; {dep.stage}
+              </CardDescription>
             </CardHeader>
             <CardContent>
               <div className="flex gap-2">
                 <Button size="sm" variant="outline" onClick={() => handleLineage(dep.id)}>
                   <Network className="mr-1 h-3 w-3" /> Lineage
                 </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setPlayground({ ...playground, model: dep.name })}
+                >
+                  Use in playground
+                </Button>
                 <Button size="sm" variant="destructive" onClick={() => handleDelete(dep.id)}>
-                  <Undo2 className="mr-1 h-3 w-3" /> Rollback
+                  <Undo2 className="mr-1 h-3 w-3" /> Stop
                 </Button>
               </div>
             </CardContent>
@@ -106,7 +172,11 @@ export default function ServingPage() {
 
       {lineage && (
         <Card>
-          <CardHeader><CardTitle className="text-lg flex items-center gap-2"><Network className="h-5 w-5" /> Model Lineage</CardTitle></CardHeader>
+          <CardHeader>
+            <CardTitle className="text-lg flex items-center gap-2">
+              <Network className="h-5 w-5" /> Model Lineage
+            </CardTitle>
+          </CardHeader>
           <CardContent>
             <div className="flex items-center gap-3 overflow-x-auto py-4">
               {[
@@ -134,9 +204,21 @@ export default function ServingPage() {
       )}
 
       <Card>
-        <CardHeader><CardTitle className="text-lg flex items-center gap-2"><Send className="h-5 w-5" /> Playground</CardTitle></CardHeader>
+        <CardHeader>
+          <CardTitle className="text-lg flex items-center gap-2">
+            <Send className="h-5 w-5" /> Playground
+          </CardTitle>
+          <CardDescription>
+            {playground.model ? `Model: ${playground.model}` : "Deploy a model first, then generate."}
+          </CardDescription>
+        </CardHeader>
         <CardContent className="space-y-4">
-          <textarea className="w-full rounded-md border bg-background px-3 py-2 text-sm h-24" placeholder="Enter your prompt..." value={playground.prompt} onChange={(e) => setPlayground({ ...playground, prompt: e.target.value })} />
+          <textarea
+            className="w-full rounded-md border bg-background px-3 py-2 text-sm h-24"
+            placeholder="Enter your prompt..."
+            value={playground.prompt}
+            onChange={(e) => setPlayground({ ...playground, prompt: e.target.value })}
+          />
           <Button onClick={handleInfer} disabled={playground.loading || !playground.prompt}>
             {playground.loading ? "Generating..." : "Generate"}
           </Button>

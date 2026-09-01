@@ -2,24 +2,33 @@ import hashlib
 import time
 from contextlib import asynccontextmanager
 
+import httpx
+import structlog
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from prometheus_client import Counter, Histogram, generate_latest
 from pydantic import BaseModel, Field
 from starlette.responses import Response
 
+from app.core.config import settings
 from app.engine.batcher import RequestBatcher
 from app.engine.cache import ResponseCache
+from app.models.loader import ModelManager
 from app.router.ab_router import ABRouter
+
+logger = structlog.get_logger()
 
 REQUEST_COUNT = Counter("inference_requests_total", "Total inference requests", ["model"])
 REQUEST_LATENCY = Histogram(
-    "inference_request_latency_ms", "Inference latency in ms", ["model"],
+    "inference_request_latency_ms",
+    "Inference latency in ms",
+    ["model"],
     buckets=[10, 25, 50, 100, 250, 500, 1000, 2500, 5000],
 )
 TOKENS_GENERATED = Counter("inference_tokens_generated_total", "Total tokens generated", ["model"])
 
-batcher = RequestBatcher()
+model_manager = ModelManager()
+batcher = RequestBatcher(model_manager)
 cache = ResponseCache()
 ab_router = ABRouter()
 
@@ -58,6 +67,51 @@ class InferenceResponse(BaseModel):
     cached: bool = False
 
 
+class LoadModelRequest(BaseModel):
+    model_config = {"protected_namespaces": ()}
+
+    model_name: str
+    artifact_path: str
+    traffic_pct: float = Field(100.0, ge=0.0, le=100.0)
+    deployed_model_id: int | None = None
+
+
+class RouteRequest(BaseModel):
+    model_name: str
+    traffic_pct: float = Field(..., ge=0.0, le=100.0)
+
+
+async def _log_completion(
+    *,
+    model_name: str,
+    prompt: str,
+    completion: str,
+    tokens_in: int,
+    tokens_out: int,
+    latency_ms: float,
+    deployed_model_id: int | None,
+) -> None:
+    if not settings.backend_url:
+        return
+    payload = {
+        "model_name": model_name,
+        "prompt": prompt,
+        "completion": completion,
+        "tokens_in": tokens_in,
+        "tokens_out": tokens_out,
+        "latency_ms": latency_ms,
+        "deployed_model_id": deployed_model_id,
+    }
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            await client.post(
+                f"{settings.backend_url.rstrip('/')}/api/v1/serving/inference-logs",
+                json=payload,
+            )
+    except Exception as exc:
+        logger.warning("inference_log_failed", error=str(exc))
+
+
 @app.post("/v1/completions", response_model=InferenceResponse)
 async def create_completion(request: InferenceRequest):
     model_name = ab_router.route(request.model)
@@ -69,7 +123,16 @@ async def create_completion(request: InferenceRequest):
     cached_response = await cache.get(prompt_hash)
     if cached_response:
         REQUEST_COUNT.labels(model=model_name).inc()
-        return InferenceResponse(**cached_response, cached=True)
+        await _log_completion(
+            model_name=model_name,
+            prompt=request.prompt,
+            completion=cached_response["completion"],
+            tokens_in=cached_response["tokens_in"],
+            tokens_out=cached_response["tokens_out"],
+            latency_ms=cached_response.get("latency_ms", 0),
+            deployed_model_id=cached_response.get("deployed_model_id"),
+        )
+        return InferenceResponse(**{k: v for k, v in cached_response.items() if k != "deployed_model_id"}, cached=True)
 
     start = time.perf_counter()
     result = await batcher.process(
@@ -90,16 +153,67 @@ async def create_completion(request: InferenceRequest):
         "tokens_in": result["tokens_in"],
         "tokens_out": result["tokens_out"],
         "latency_ms": round(latency_ms, 2),
+        "deployed_model_id": result.get("deployed_model_id"),
     }
 
     await cache.set(prompt_hash, response_data, ttl=3600)
+    await _log_completion(
+        model_name=model_name,
+        prompt=request.prompt,
+        completion=result["completion"],
+        tokens_in=result["tokens_in"],
+        tokens_out=result["tokens_out"],
+        latency_ms=round(latency_ms, 2),
+        deployed_model_id=result.get("deployed_model_id"),
+    )
 
-    return InferenceResponse(**response_data)
+    return InferenceResponse(
+        completion=response_data["completion"],
+        model=model_name,
+        tokens_in=response_data["tokens_in"],
+        tokens_out=response_data["tokens_out"],
+        latency_ms=response_data["latency_ms"],
+    )
+
+
+@app.post("/admin/models/load")
+async def load_model(payload: LoadModelRequest):
+    try:
+        await model_manager.load_model(
+            model_name=payload.model_name,
+            model_path=payload.artifact_path,
+            deployed_model_id=payload.deployed_model_id,
+        )
+    except FileNotFoundError as e:
+        raise HTTPException(404, str(e)) from e
+    except Exception as e:
+        raise HTTPException(500, f"Failed to load model: {e}") from e
+    ab_router.set_route(payload.model_name, payload.traffic_pct)
+    return {
+        "status": "loaded",
+        "model_name": payload.model_name,
+        "traffic_pct": payload.traffic_pct,
+        "models_loaded": model_manager.list_loaded(),
+    }
+
+
+@app.post("/admin/routes")
+async def set_route(payload: RouteRequest):
+    ab_router.set_route(payload.model_name, payload.traffic_pct)
+    return {"model_name": payload.model_name, "traffic_pct": payload.traffic_pct}
+
+
+@app.get("/admin/models")
+async def list_models():
+    return {
+        "loaded": model_manager.list_loaded(),
+        "routes": ab_router.list_models(),
+    }
 
 
 @app.get("/health")
 async def health():
-    return {"status": "healthy", "models_loaded": ab_router.list_models()}
+    return {"status": "healthy", "models_loaded": model_manager.list_loaded()}
 
 
 @app.get("/metrics")

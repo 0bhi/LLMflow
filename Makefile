@@ -68,7 +68,7 @@ clean:
 
 # ---------- One-command demo ----------
 # Starts all services, runs migrations, then drives the full pipeline:
-#   upload dataset → split → fine-tune GPT-2 with LoRA → eval perplexity → query
+#   upload dataset → split → fine-tune GPT-2 with LoRA → eval perplexity → deploy → query
 demo:
 	@echo "=== LLMflow Demo ==="
 	@echo "Starting services..."

@@ -42,7 +42,10 @@ export const api = {
     return fetch(`${API_URL}/api/v1/datasets/${datasetId}/upload`, {
       method: "POST",
       body: form,
-    }).then((r) => r.json());
+    }).then(async (r) => {
+      if (!r.ok) throw new ApiError(r.status, await r.text());
+      return r.json();
+    });
   },
   listVersions: (datasetId: number) =>
     request<any[]>(`${API_URL}/api/v1/datasets/${datasetId}/versions`),

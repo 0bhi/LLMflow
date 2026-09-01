@@ -46,7 +46,10 @@ async def upload_dataset_version(
     file: UploadFile = File(...),
 ):
     svc = DatasetService(db, storage)
-    return await svc.upload_version(dataset_id, file)
+    try:
+        return await svc.upload_version(dataset_id, file)
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
 
 
 @router.get("/{dataset_id}/versions", response_model=list[DatasetVersionResponse])
@@ -68,7 +71,10 @@ async def create_splits(
     storage: StorageClient,
 ):
     svc = DatasetService(db, storage)
-    return await svc.create_splits(dataset_id, version, config)
+    try:
+        return await svc.create_splits(dataset_id, version, config)
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
 
 
 @router.get(
