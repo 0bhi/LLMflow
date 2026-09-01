@@ -15,7 +15,16 @@ export default function TrainingPage() {
   const [showCreate, setShowCreate] = useState(false);
   const [form, setForm] = useState({
     name: "", base_model: "gpt2", dataset_version_id: 1, seed: 42,
-    config_snapshot_json: JSON.stringify({ lora_r: 16, lora_alpha: 32, learning_rate: 2e-4, epochs: 3 }, null, 2),
+    config_snapshot_json: `{
+  "epochs": 1,
+  "batch_size": 2,
+  "gradient_accumulation_steps": 2,
+  "learning_rate": 5e-4,
+  "lora_r": 8,
+  "lora_alpha": 16,
+  "max_seq_length": 128,
+  "warmup_steps": 5
+}`,
   });
 
   const loadExperiments = useCallback(async () => {
@@ -66,7 +75,7 @@ export default function TrainingPage() {
             <div className="grid grid-cols-2 gap-4">
               <input className="rounded-md border bg-background px-3 py-2 text-sm" placeholder="Experiment name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
               <input className="rounded-md border bg-background px-3 py-2 text-sm" placeholder="Base model (e.g. gpt2)" value={form.base_model} onChange={(e) => setForm({ ...form, base_model: e.target.value })} />
-              <input type="number" className="rounded-md border bg-background px-3 py-2 text-sm" placeholder="Dataset version ID" value={form.dataset_version_id} onChange={(e) => setForm({ ...form, dataset_version_id: parseInt(e.target.value) })} />
+              <input type="number" className="rounded-md border bg-background px-3 py-2 text-sm" placeholder="Dataset version ID (from Data → version id)" value={form.dataset_version_id} onChange={(e) => setForm({ ...form, dataset_version_id: parseInt(e.target.value) })} />
               <input type="number" className="rounded-md border bg-background px-3 py-2 text-sm" placeholder="Seed" value={form.seed} onChange={(e) => setForm({ ...form, seed: parseInt(e.target.value) })} />
             </div>
             <textarea className="w-full rounded-md border bg-background px-3 py-2 text-sm font-mono h-32" placeholder="Config JSON" value={form.config_snapshot_json} onChange={(e) => setForm({ ...form, config_snapshot_json: e.target.value })} />

@@ -122,7 +122,7 @@ services:
       context: ./inference
       dockerfile: Dockerfile
     command: >
-      uvicorn app.main:app --host 0.0.0.0 --port 8001 --reload
+      uvicorn app.main:app --host 0.0.0.0 --port 8001
     env_file: .env
     ports:
       - "8001:8001"

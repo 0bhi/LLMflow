@@ -68,6 +68,7 @@ class ModelManager:
                 "tokens_in": len(prompt.split()),
                 "tokens_out": 10,
                 "deployed_model_id": self._deployed_ids.get(model_name),
+                "placeholder": True,
             }
 
         model = self._models[model_name]
@@ -78,17 +79,25 @@ class ModelManager:
 
         import torch
 
+        max_new = max(1, min(max_tokens, 64))
+        sampling = temperature > 0
         with torch.no_grad():
             outputs = model.generate(
                 **inputs,
-                max_new_tokens=max_tokens,
-                temperature=temperature if temperature > 0 else 1.0,
-                do_sample=temperature > 0,
+                max_new_tokens=max_new,
+                temperature=temperature if sampling else 1.0,
+                do_sample=sampling,
                 pad_token_id=tokenizer.pad_token_id,
+                eos_token_id=tokenizer.eos_token_id,
+                repetition_penalty=1.2,
             )
 
         tokens_out = outputs.shape[1] - tokens_in
         completion = tokenizer.decode(outputs[0][tokens_in:], skip_special_tokens=True)
+        for stop in ("### Instruction", "### Input", "\n###"):
+            if stop in completion:
+                completion = completion.split(stop, 1)[0]
+        completion = completion.strip()
 
         return {
             "completion": completion,

@@ -51,6 +51,15 @@ async def update_deployment(deployment_id: int, payload: DeploymentUpdate, db: D
         raise HTTPException(400, str(e)) from e
 
 
+@router.post("/deployments/{deployment_id}/reload", response_model=DeploymentResponse)
+async def reload_deployment(deployment_id: int, db: DBSession):
+    svc = DeploymentService(db)
+    try:
+        return await svc.reload(deployment_id)
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+
+
 @router.delete("/deployments/{deployment_id}", status_code=204)
 async def delete_deployment(deployment_id: int, db: DBSession):
     svc = DeploymentService(db)

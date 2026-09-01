@@ -103,6 +103,8 @@ export const api = {
     }),
   deleteDeployment: (id: number) =>
     request<void>(`${API_URL}/api/v1/serving/deployments/${id}`, { method: "DELETE" }),
+  reloadDeployment: (id: number) =>
+    request<any>(`${API_URL}/api/v1/serving/deployments/${id}/reload`, { method: "POST" }),
   getLineage: (id: number) => request<any>(`${API_URL}/api/v1/serving/lineage/${id}`),
 
   // Monitoring

@@ -121,7 +121,9 @@ async def create_completion(request: InferenceRequest):
     ).hexdigest()
 
     cached_response = await cache.get(prompt_hash)
-    if cached_response:
+    if cached_response and "not loaded. This is a placeholder" not in str(
+        cached_response.get("completion", "")
+    ):
         REQUEST_COUNT.labels(model=model_name).inc()
         await _log_completion(
             model_name=model_name,
@@ -132,7 +134,12 @@ async def create_completion(request: InferenceRequest):
             latency_ms=cached_response.get("latency_ms", 0),
             deployed_model_id=cached_response.get("deployed_model_id"),
         )
-        return InferenceResponse(**{k: v for k, v in cached_response.items() if k != "deployed_model_id"}, cached=True)
+        return InferenceResponse(
+            **{k: v for k, v in cached_response.items() if k != "deployed_model_id"},
+            cached=True,
+        )
+    if cached_response:
+        await cache.invalidate(prompt_hash)
 
     start = time.perf_counter()
     result = await batcher.process(
@@ -156,7 +163,8 @@ async def create_completion(request: InferenceRequest):
         "deployed_model_id": result.get("deployed_model_id"),
     }
 
-    await cache.set(prompt_hash, response_data, ttl=3600)
+    if not result.get("placeholder"):
+        await cache.set(prompt_hash, response_data, ttl=3600)
     await _log_completion(
         model_name=model_name,
         prompt=request.prompt,

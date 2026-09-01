@@ -35,20 +35,33 @@ class DeploymentService:
         self.db.add(dep)
         await self.db.flush()
 
+        await self._push_to_inference(dep, run)
+        return dep
+
+    async def _push_to_inference(self, dep: DeployedModel, run: TrainingRun | None = None) -> DeployedModel:
+        if run is None:
+            run = await self.db.get(TrainingRun, dep.training_run_id)
+        if not run or not run.model_artifact_path:
+            raise ValueError("Training run has no completed model artifact")
         try:
             await self.inference.load_model(
                 model_name=dep.name,
                 artifact_path=run.model_artifact_path,
-                traffic_pct=dep.traffic_pct,
+                traffic_pct=dep.traffic_pct or 100.0,
                 deployed_model_id=dep.id,
             )
             dep.status = DeploymentStatus.ACTIVE
         except (httpx.HTTPError, httpx.RequestError) as e:
             dep.status = DeploymentStatus.FAILED
             raise ValueError(f"Inference server failed to load model: {e}") from e
-
         await self.db.flush()
         return dep
+
+    async def reload(self, deployment_id: int) -> DeployedModel:
+        dep = await self.get(deployment_id)
+        if not dep:
+            raise ValueError("Deployment not found")
+        return await self._push_to_inference(dep)
 
     async def get(self, deployment_id: int) -> DeployedModel | None:
         return await self.db.get(DeployedModel, deployment_id)

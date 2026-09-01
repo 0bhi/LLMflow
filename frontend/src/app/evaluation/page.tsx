@@ -74,7 +74,7 @@ export default function EvaluationPage() {
                 </select>
               </div>
               <div>
-                <label className="text-xs text-muted-foreground">Dataset Split ID (val/test only)</label>
+                <label className="text-xs text-muted-foreground">Dataset Split ID (val/test id from Data)</label>
                 <input type="number" className="w-full rounded-md border bg-background px-3 py-2 text-sm" value={form.dataset_split_id} onChange={(e) => setForm({ ...form, dataset_split_id: parseInt(e.target.value) })} />
               </div>
             </div>
