@@ -67,4 +67,7 @@ async def launch_sweep(
     db: DBSession,
 ):
     svc = ExperimentService(db)
-    return await svc.launch_sweep(experiment_id, config)
+    try:
+        return await svc.launch_sweep(experiment_id, config)
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e

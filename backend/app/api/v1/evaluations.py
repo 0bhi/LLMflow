@@ -16,16 +16,10 @@ router = APIRouter()
 @router.post("", response_model=EvaluationResponse, status_code=201)
 async def create_evaluation(payload: EvaluationCreate, db: DBSession):
     svc = EvalService(db)
-    return await svc.create(payload)
-
-
-@router.get("/{evaluation_id}", response_model=EvaluationResponse)
-async def get_evaluation(evaluation_id: int, db: DBSession):
-    svc = EvalService(db)
-    ev = await svc.get(evaluation_id)
-    if not ev:
-        raise HTTPException(404, "Evaluation not found")
-    return ev
+    try:
+        return await svc.create(payload)
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
 
 
 @router.get("", response_model=list[EvaluationResponse])
@@ -60,3 +54,12 @@ async def list_ratings(
 ):
     svc = EvalService(db)
     return await svc.list_ratings(inference_log_id=inference_log_id, skip=skip, limit=limit)
+
+
+@router.get("/{evaluation_id}", response_model=EvaluationResponse)
+async def get_evaluation(evaluation_id: int, db: DBSession):
+    svc = EvalService(db)
+    ev = await svc.get(evaluation_id)
+    if not ev:
+        raise HTTPException(404, "Evaluation not found")
+    return ev

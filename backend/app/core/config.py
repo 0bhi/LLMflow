@@ -23,6 +23,8 @@ class Settings(BaseSettings):
     frontend_url: str = "http://localhost:3000"
 
     gpu_cost_per_hour: float = 2.50
+    inference_cost_per_1k_tokens: float = 0.002
+    inference_url: str = "http://inference:8001"
 
     model_config = {"env_file": ".env", "extra": "ignore"}
 

@@ -33,7 +33,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         self._requests: dict[str, list[float]] = defaultdict(list)
 
     async def dispatch(self, request: Request, call_next):
-        if request.url.path in ("/health", "/docs", "/redoc", "/openapi.json"):
+        if request.url.path in ("/health", "/metrics", "/docs", "/redoc", "/openapi.json"):
             return await call_next(request)
 
         client_ip = request.client.host if request.client else "unknown"

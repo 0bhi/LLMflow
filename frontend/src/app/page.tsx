@@ -38,18 +38,24 @@ export default function Dashboard() {
           api.getMetrics(),
         ]);
 
+        if (deployments.status === "fulfilled") {
+          const visible = deployments.value.filter((d: any) => d.status !== "stopped");
+          setRecentDeployments(visible.slice(0, 5));
+        }
+
+        const visibleCount =
+          deployments.status === "fulfilled"
+            ? deployments.value.filter((d: any) => d.status !== "stopped").length
+            : 0;
+
         setStats({
           datasets: datasets.status === "fulfilled" ? datasets.value.length : 0,
           experiments: experiments.status === "fulfilled" ? experiments.value.length : 0,
-          deployments: deployments.status === "fulfilled" ? deployments.value.length : 0,
+          deployments: visibleCount,
           totalCost: costs.status === "fulfilled" ? costs.value.total_cost_usd : 0,
           avgLatency: metrics.status === "fulfilled" ? metrics.value.avg_latency_ms : 0,
           totalRequests: metrics.status === "fulfilled" ? metrics.value.total_requests : 0,
         });
-
-        if (deployments.status === "fulfilled") {
-          setRecentDeployments(deployments.value.slice(0, 5));
-        }
       } catch {
         // API not available yet
       }

@@ -367,8 +367,14 @@ def run_evaluation(self, evaluation_id: int) -> dict:
                 score = results["perplexity"]
 
             elif ev.eval_type == EvalType.TASK_ACCURACY:
-                results = _run_task_accuracy_eval(model_path, raw_lines, split)
-                score = results.get("accuracy", 0.0)
+                results = _run_task_accuracy_eval(model_path, raw_lines, split, subtype="qa")
+                score = results.get("exact_match", 0.0)
+
+            elif ev.eval_type == EvalType.CLASSIFICATION:
+                results = _run_task_accuracy_eval(
+                    model_path, raw_lines, split, subtype="classification"
+                )
+                score = results.get("f1_macro", 0.0)
 
             elif ev.eval_type == EvalType.SELF_CONSISTENCY:
                 prompts = [t.split("### Response:")[0] for t in texts[:20]]
@@ -425,9 +431,12 @@ def _run_perplexity_eval(model_path: str, texts: list[str], split: DatasetSplit)
 
 
 def _run_task_accuracy_eval(
-    model_path: str, raw_lines: list[str], split: DatasetSplit
+    model_path: str,
+    raw_lines: list[str],
+    split: DatasetSplit,
+    subtype: str = "qa",
 ) -> dict:
-    """Generate predictions for each instruction and compare to reference output."""
+    """Generate predictions for each instruction and score QA exact-match or classification F1."""
     import torch
     from transformers import AutoModelForCausalLM, AutoTokenizer
 
@@ -461,9 +470,13 @@ def _run_task_accuracy_eval(
     from app.ml.evaluators.task_accuracy import TaskEvaluator
 
     evaluator = TaskEvaluator()
-    results = evaluator.evaluate_qa_exact_match(predictions, references)
+    if subtype == "classification":
+        results = evaluator.evaluate_classification(predictions, references)
+    else:
+        results = evaluator.evaluate_qa_exact_match(predictions, references)
     results["split_type"] = split.split_type.value
     results["split_hash"] = split.content_hash
+    results["task_subtype"] = subtype
     return results
 
 

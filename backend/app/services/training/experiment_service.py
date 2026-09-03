@@ -125,6 +125,10 @@ class ExperimentService:
         if not exp:
             raise ValueError(f"Experiment {experiment_id} not found")
 
+        for key, vals in config.param_space.items():
+            if not isinstance(vals, list) or not vals:
+                raise ValueError(f"param_space['{key}'] must be a non-empty list of values")
+
         param_combos: list[dict] = []
         if config.strategy == "grid":
             keys = list(config.param_space.keys())

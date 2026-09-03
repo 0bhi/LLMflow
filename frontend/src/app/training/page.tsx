@@ -13,9 +13,28 @@ export default function TrainingPage() {
   const [selectedExp, setSelectedExp] = useState<any | null>(null);
   const [runs, setRuns] = useState<any[]>([]);
   const [showCreate, setShowCreate] = useState(false);
+  const [showSweep, setShowSweep] = useState(false);
+  const [sweepError, setSweepError] = useState<string | null>(null);
+  const [sweepForm, setSweepForm] = useState({
+    strategy: "grid",
+    max_runs: 4,
+    param_space: `{
+  "learning_rate": [0.0001, 0.0005],
+  "lora_r": [8, 16]
+}`,
+  });
   const [form, setForm] = useState({
     name: "", base_model: "gpt2", dataset_version_id: 1, seed: 42,
-    config_snapshot_json: JSON.stringify({ lora_r: 16, lora_alpha: 32, learning_rate: 2e-4, epochs: 3 }, null, 2),
+    config_snapshot_json: `{
+  "epochs": 1,
+  "batch_size": 2,
+  "gradient_accumulation_steps": 2,
+  "learning_rate": 5e-4,
+  "lora_r": 8,
+  "lora_alpha": 16,
+  "max_seq_length": 128,
+  "warmup_steps": 5
+}`,
   });
 
   const loadExperiments = useCallback(async () => {
@@ -47,6 +66,23 @@ export default function TrainingPage() {
     if (selectedExp) loadRuns(selectedExp.id);
   };
 
+  const handleSweep = async () => {
+    if (!selectedExp) return;
+    setSweepError(null);
+    try {
+      const param_space = JSON.parse(sweepForm.param_space);
+      await api.launchSweep(selectedExp.id, {
+        strategy: sweepForm.strategy,
+        param_space,
+        max_runs: sweepForm.max_runs,
+      });
+      setShowSweep(false);
+      loadRuns(selectedExp.id);
+    } catch (e: any) {
+      setSweepError(e.message || "Sweep failed — check param JSON (each key must map to a list)");
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -66,7 +102,7 @@ export default function TrainingPage() {
             <div className="grid grid-cols-2 gap-4">
               <input className="rounded-md border bg-background px-3 py-2 text-sm" placeholder="Experiment name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
               <input className="rounded-md border bg-background px-3 py-2 text-sm" placeholder="Base model (e.g. gpt2)" value={form.base_model} onChange={(e) => setForm({ ...form, base_model: e.target.value })} />
-              <input type="number" className="rounded-md border bg-background px-3 py-2 text-sm" placeholder="Dataset version ID" value={form.dataset_version_id} onChange={(e) => setForm({ ...form, dataset_version_id: parseInt(e.target.value) })} />
+              <input type="number" className="rounded-md border bg-background px-3 py-2 text-sm" placeholder="Dataset version ID (from Data → version id)" value={form.dataset_version_id} onChange={(e) => setForm({ ...form, dataset_version_id: parseInt(e.target.value) })} />
               <input type="number" className="rounded-md border bg-background px-3 py-2 text-sm" placeholder="Seed" value={form.seed} onChange={(e) => setForm({ ...form, seed: parseInt(e.target.value) })} />
             </div>
             <textarea className="w-full rounded-md border bg-background px-3 py-2 text-sm font-mono h-32" placeholder="Config JSON" value={form.config_snapshot_json} onChange={(e) => setForm({ ...form, config_snapshot_json: e.target.value })} />
@@ -101,12 +137,63 @@ export default function TrainingPage() {
           <CardHeader>
             <div className="flex items-center justify-between">
               <CardTitle className="text-lg">{selectedExp.name} — Runs</CardTitle>
-              <Button size="sm" onClick={() => handleLaunchRun(selectedExp.id)}>
-                <Play className="mr-1 h-3 w-3" /> Launch Run
-              </Button>
+              <div className="flex gap-2">
+                <Button size="sm" variant="outline" onClick={() => setShowSweep(!showSweep)}>
+                  Sweep
+                </Button>
+                <Button size="sm" onClick={() => handleLaunchRun(selectedExp.id)}>
+                  <Play className="mr-1 h-3 w-3" /> Launch Run
+                </Button>
+              </div>
             </div>
           </CardHeader>
           <CardContent>
+            {showSweep && (
+              <div className="mb-4 space-y-3 rounded-lg border p-4">
+                <h4 className="text-sm font-medium">Hyperparameter sweep</h4>
+                <p className="text-xs text-muted-foreground">
+                  Grid enumerates combinations; random samples up to max runs. Duplicate configs are skipped.
+                </p>
+                {sweepError && (
+                  <div className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                    {sweepError}
+                  </div>
+                )}
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-xs text-muted-foreground">Strategy</label>
+                    <select
+                      className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+                      value={sweepForm.strategy}
+                      onChange={(e) => setSweepForm({ ...sweepForm, strategy: e.target.value })}
+                    >
+                      <option value="grid">Grid</option>
+                      <option value="random">Random</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-xs text-muted-foreground">Max runs</label>
+                    <input
+                      type="number"
+                      min={1}
+                      max={100}
+                      className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+                      value={sweepForm.max_runs}
+                      onChange={(e) => setSweepForm({ ...sweepForm, max_runs: parseInt(e.target.value) || 1 })}
+                    />
+                  </div>
+                </div>
+                <textarea
+                  className="w-full rounded-md border bg-background px-3 py-2 text-sm font-mono h-28"
+                  value={sweepForm.param_space}
+                  onChange={(e) => setSweepForm({ ...sweepForm, param_space: e.target.value })}
+                />
+                <div className="flex gap-2">
+                  <Button size="sm" onClick={handleSweep}>Launch Sweep</Button>
+                  <Button size="sm" variant="outline" onClick={() => setShowSweep(false)}>Cancel</Button>
+                </div>
+              </div>
+            )}
             {runs.length === 0 ? (
               <p className="text-sm text-muted-foreground">No runs yet.</p>
             ) : (

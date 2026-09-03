@@ -15,7 +15,7 @@ class ABRouter:
         self._routes.pop(model_name, None)
 
     def route(self, requested_model: str | None = None) -> str:
-        if requested_model and requested_model in self._routes:
+        if requested_model:
             return requested_model
 
         if not self._routes:

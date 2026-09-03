@@ -1,4 +1,8 @@
+import os
+
 import structlog
+
+from app.core.storage import download_artifact
 
 logger = structlog.get_logger()
 
@@ -9,17 +13,44 @@ class ModelManager:
     def __init__(self):
         self._models: dict[str, object] = {}
         self._tokenizers: dict[str, object] = {}
+        self._deployed_ids: dict[str, int] = {}
 
-    async def load_model(self, model_name: str, model_path: str, **kwargs) -> None:
+    async def load_model(
+        self,
+        model_name: str,
+        model_path: str,
+        deployed_model_id: int | None = None,
+        **kwargs,
+    ) -> None:
         try:
+            from peft import PeftConfig, PeftModel
             from transformers import AutoModelForCausalLM, AutoTokenizer
 
-            tokenizer = AutoTokenizer.from_pretrained(model_path)
-            model = AutoModelForCausalLM.from_pretrained(model_path, **kwargs)
+            local_path = model_path
+            if not os.path.isdir(model_path):
+                local_path = download_artifact(model_path)
 
+            adapter_config = os.path.join(local_path, "adapter_config.json")
+            if os.path.exists(adapter_config):
+                peft_config = PeftConfig.from_pretrained(local_path)
+                model = AutoModelForCausalLM.from_pretrained(
+                    peft_config.base_model_name_or_path, **kwargs
+                )
+                model = PeftModel.from_pretrained(model, local_path)
+                tokenizer = AutoTokenizer.from_pretrained(local_path)
+            else:
+                tokenizer = AutoTokenizer.from_pretrained(local_path)
+                model = AutoModelForCausalLM.from_pretrained(local_path, **kwargs)
+
+            if tokenizer.pad_token is None:
+                tokenizer.pad_token = tokenizer.eos_token
+
+            model.eval()
             self._models[model_name] = model
             self._tokenizers[model_name] = tokenizer
-            logger.info("model_loaded", model_name=model_name, path=model_path)
+            if deployed_model_id is not None:
+                self._deployed_ids[model_name] = deployed_model_id
+            logger.info("model_loaded", model_name=model_name, path=local_path)
         except Exception as e:
             logger.error("model_load_failed", model_name=model_name, error=str(e))
             raise
@@ -36,6 +67,8 @@ class ModelManager:
                 "completion": f"[Model '{model_name}' not loaded. This is a placeholder response.]",
                 "tokens_in": len(prompt.split()),
                 "tokens_out": 10,
+                "deployed_model_id": self._deployed_ids.get(model_name),
+                "placeholder": True,
             }
 
         model = self._models[model_name]
@@ -46,22 +79,41 @@ class ModelManager:
 
         import torch
 
+        max_new = max(1, min(max_tokens, 64))
+        sampling = temperature > 0
         with torch.no_grad():
             outputs = model.generate(
                 **inputs,
-                max_new_tokens=max_tokens,
-                temperature=temperature if temperature > 0 else 1.0,
-                do_sample=temperature > 0,
+                max_new_tokens=max_new,
+                temperature=temperature if sampling else 1.0,
+                do_sample=sampling,
+                pad_token_id=tokenizer.pad_token_id,
+                eos_token_id=tokenizer.eos_token_id,
+                repetition_penalty=1.2,
             )
 
         tokens_out = outputs.shape[1] - tokens_in
         completion = tokenizer.decode(outputs[0][tokens_in:], skip_special_tokens=True)
+        for stop in ("### Instruction", "### Input", "\n###"):
+            if stop in completion:
+                completion = completion.split(stop, 1)[0]
+        completion = completion.strip()
 
         return {
             "completion": completion,
             "tokens_in": tokens_in,
             "tokens_out": tokens_out,
+            "deployed_model_id": self._deployed_ids.get(model_name),
         }
+
+    def unload_model(self, model_name: str) -> None:
+        self._models.pop(model_name, None)
+        self._tokenizers.pop(model_name, None)
+        self._deployed_ids.pop(model_name, None)
+        logger.info("model_unloaded", model_name=model_name)
 
     def is_loaded(self, model_name: str) -> bool:
         return model_name in self._models
+
+    def list_loaded(self) -> list[str]:
+        return list(self._models.keys())

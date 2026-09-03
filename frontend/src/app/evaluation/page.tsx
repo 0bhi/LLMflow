@@ -15,10 +15,30 @@ export default function EvaluationPage() {
   const [compareForm, setCompareForm] = useState({ run_id_a: 1, run_id_b: 2, eval_type: "perplexity", dataset_split_id: 1 });
   const [comparison, setComparison] = useState<any | null>(null);
   const [showCompare, setShowCompare] = useState(false);
-  const [ratingForm, setRatingForm] = useState({ inference_log_id: 1, rater_id: "reviewer-1", score: 4, feedback: "", dimension: "overall" });
+  const [ratingForm, setRatingForm] = useState({
+    inference_log_id: 0,
+    rater_id: "reviewer-1",
+    score: 4,
+    feedback: "",
+    dimension: "overall",
+  });
+  const [logs, setLogs] = useState<any[]>([]);
+  const [ratings, setRatings] = useState<any[]>([]);
 
   const load = useCallback(async () => {
-    try { setEvaluations(await api.listEvaluations()); } catch {}
+    try {
+      const [evs, recentLogs, recentRatings] = await Promise.all([
+        api.listEvaluations(),
+        api.listInferenceLogs(0, 10).catch(() => []),
+        api.listRatings().catch(() => []),
+      ]);
+      setEvaluations(evs);
+      setLogs(recentLogs);
+      setRatings(recentRatings);
+      if (recentLogs[0]) {
+        setRatingForm((f) => (f.inference_log_id ? f : { ...f, inference_log_id: recentLogs[0].id }));
+      }
+    } catch {}
   }, []);
 
   useEffect(() => { load(); }, [load]);
@@ -35,8 +55,9 @@ export default function EvaluationPage() {
   };
 
   const handleRate = async () => {
-    await api.createRating(ratingForm);
-    setRatingForm({ ...ratingForm, feedback: "", score: 4 });
+        await api.createRating(ratingForm);
+        setRatingForm({ ...ratingForm, feedback: "", score: 4 });
+        load();
   };
 
   return (
@@ -69,12 +90,13 @@ export default function EvaluationPage() {
                 <label className="text-xs text-muted-foreground">Eval Type</label>
                 <select className="w-full rounded-md border bg-background px-3 py-2 text-sm" value={form.eval_type} onChange={(e) => setForm({ ...form, eval_type: e.target.value })}>
                   <option value="perplexity">Perplexity</option>
-                  <option value="task_accuracy">Task Accuracy</option>
+                  <option value="task_accuracy">QA exact-match</option>
+                  <option value="classification">Classification F1</option>
                   <option value="self_consistency">Self-Consistency</option>
                 </select>
               </div>
               <div>
-                <label className="text-xs text-muted-foreground">Dataset Split ID (val/test only)</label>
+                <label className="text-xs text-muted-foreground">Dataset Split ID (val/test id from Data)</label>
                 <input type="number" className="w-full rounded-md border bg-background px-3 py-2 text-sm" value={form.dataset_split_id} onChange={(e) => setForm({ ...form, dataset_split_id: parseInt(e.target.value) })} />
               </div>
             </div>
@@ -95,7 +117,8 @@ export default function EvaluationPage() {
               <input type="number" className="rounded-md border bg-background px-3 py-2 text-sm" placeholder="Run B" value={compareForm.run_id_b} onChange={(e) => setCompareForm({ ...compareForm, run_id_b: parseInt(e.target.value) })} />
               <select className="rounded-md border bg-background px-3 py-2 text-sm" value={compareForm.eval_type} onChange={(e) => setCompareForm({ ...compareForm, eval_type: e.target.value })}>
                 <option value="perplexity">Perplexity</option>
-                <option value="task_accuracy">Task Accuracy</option>
+                <option value="task_accuracy">QA exact-match</option>
+                <option value="classification">Classification F1</option>
               </select>
               <Button onClick={handleCompare}>Compare</Button>
             </div>
@@ -133,15 +156,65 @@ export default function EvaluationPage() {
       </div>
 
       <Card>
-        <CardHeader><CardTitle className="text-lg flex items-center gap-2"><Star className="h-5 w-5" /> Human Rating</CardTitle></CardHeader>
+        <CardHeader>
+          <CardTitle className="text-lg flex items-center gap-2"><Star className="h-5 w-5" /> Human ratings</CardTitle>
+        </CardHeader>
         <CardContent className="space-y-4">
-          <div className="grid grid-cols-5 gap-3">
-            <input type="number" className="rounded-md border bg-background px-3 py-2 text-sm" placeholder="Log ID" value={ratingForm.inference_log_id} onChange={(e) => setRatingForm({ ...ratingForm, inference_log_id: parseInt(e.target.value) })} />
-            <input className="rounded-md border bg-background px-3 py-2 text-sm" placeholder="Rater ID" value={ratingForm.rater_id} onChange={(e) => setRatingForm({ ...ratingForm, rater_id: e.target.value })} />
-            <input type="number" step="0.5" min="1" max="5" className="rounded-md border bg-background px-3 py-2 text-sm" value={ratingForm.score} onChange={(e) => setRatingForm({ ...ratingForm, score: parseFloat(e.target.value) })} />
-            <input className="rounded-md border bg-background px-3 py-2 text-sm" placeholder="Feedback" value={ratingForm.feedback} onChange={(e) => setRatingForm({ ...ratingForm, feedback: e.target.value })} />
-            <Button onClick={handleRate}>Submit Rating</Button>
-          </div>
+          <p className="text-sm text-muted-foreground">
+            After a playground generate, rate the completion there. You can also pick a recent log below.
+          </p>
+          {logs.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No inference logs yet — generate in Serving first.</p>
+          ) : (
+            <div className="space-y-3">
+              <select
+                className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+                value={ratingForm.inference_log_id}
+                onChange={(e) => setRatingForm({ ...ratingForm, inference_log_id: parseInt(e.target.value) })}
+              >
+                {logs.map((log) => (
+                  <option key={log.id} value={log.id}>
+                    #{log.id} · {log.completion?.slice(0, 60) || "empty"}
+                  </option>
+                ))}
+              </select>
+              <div className="flex gap-1">
+                {[1, 2, 3, 4, 5].map((n) => (
+                  <button
+                    key={n}
+                    type="button"
+                    className={n <= ratingForm.score ? "text-yellow-500" : "text-muted-foreground"}
+                    onClick={() => setRatingForm({ ...ratingForm, score: n })}
+                  >
+                    <Star className="h-5 w-5" fill={n <= ratingForm.score ? "currentColor" : "none"} />
+                  </button>
+                ))}
+              </div>
+              <div className="grid grid-cols-3 gap-3">
+                <select
+                  className="rounded-md border bg-background px-3 py-2 text-sm"
+                  value={ratingForm.dimension}
+                  onChange={(e) => setRatingForm({ ...ratingForm, dimension: e.target.value })}
+                >
+                  <option value="overall">Overall</option>
+                  <option value="helpfulness">Helpfulness</option>
+                  <option value="faithfulness">Faithfulness</option>
+                </select>
+                <input
+                  className="rounded-md border bg-background px-3 py-2 text-sm"
+                  placeholder="Feedback"
+                  value={ratingForm.feedback}
+                  onChange={(e) => setRatingForm({ ...ratingForm, feedback: e.target.value })}
+                />
+                <Button onClick={handleRate} disabled={!ratingForm.inference_log_id}>Submit rating</Button>
+              </div>
+            </div>
+          )}
+          {ratings.length > 0 && (
+            <div className="text-xs text-muted-foreground">
+              {ratings.length} rating{ratings.length === 1 ? "" : "s"} recorded
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>

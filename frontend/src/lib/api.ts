@@ -42,7 +42,10 @@ export const api = {
     return fetch(`${API_URL}/api/v1/datasets/${datasetId}/upload`, {
       method: "POST",
       body: form,
-    }).then((r) => r.json());
+    }).then(async (r) => {
+      if (!r.ok) throw new ApiError(r.status, await r.text());
+      return r.json();
+    });
   },
   listVersions: (datasetId: number) =>
     request<any[]>(`${API_URL}/api/v1/datasets/${datasetId}/versions`),
@@ -88,6 +91,12 @@ export const api = {
     request<any>(`${API_URL}/api/v1/evaluations/compare`, { method: "POST", body: JSON.stringify(data) }),
   createRating: (data: any) =>
     request<any>(`${API_URL}/api/v1/evaluations/ratings`, { method: "POST", body: JSON.stringify(data) }),
+  listRatings: (inferenceLogId?: number) => {
+    const params = inferenceLogId ? `?inference_log_id=${inferenceLogId}` : "";
+    return request<any[]>(`${API_URL}/api/v1/evaluations/ratings${params}`);
+  },
+  listInferenceLogs: (skip = 0, limit = 20) =>
+    request<any[]>(`${API_URL}/api/v1/serving/inference-logs?skip=${skip}&limit=${limit}`),
 
   // Serving
   listDeployments: () => request<any[]>(`${API_URL}/api/v1/serving/deployments`),
@@ -100,6 +109,8 @@ export const api = {
     }),
   deleteDeployment: (id: number) =>
     request<void>(`${API_URL}/api/v1/serving/deployments/${id}`, { method: "DELETE" }),
+  reloadDeployment: (id: number) =>
+    request<any>(`${API_URL}/api/v1/serving/deployments/${id}/reload`, { method: "POST" }),
   getLineage: (id: number) => request<any>(`${API_URL}/api/v1/serving/lineage/${id}`),
 
   // Monitoring

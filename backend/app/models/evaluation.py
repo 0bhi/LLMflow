@@ -18,6 +18,7 @@ class EvalStatus(str, enum.Enum):
 class EvalType(str, enum.Enum):
     PERPLEXITY = "perplexity"
     TASK_ACCURACY = "task_accuracy"
+    CLASSIFICATION = "classification"
     SELF_CONSISTENCY = "self_consistency"
     HUMAN = "human"
 

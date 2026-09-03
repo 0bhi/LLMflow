@@ -1,8 +1,8 @@
 # LLMflow
 
-**A production-grade LLM platform for the full ML lifecycle: Train → Evaluate → Deploy → Monitor → Improve**
+Internal LLM ops platform: versioned datasets with leakage-safe splits, LoRA fine-tuning with reproducibility (seed, config hash, re-run), held-out eval, deploy a run to an inference process with traffic split and Redis cache, then cost and latency from real request logs.
 
-LLMflow is an internal ML platform that manages the complete lifecycle of large language models — from dataset ingestion and LoRA fine-tuning, through automated evaluation with split discipline, to production serving with A/B testing and cost accounting.
+Docker Compose demo trains GPT-2 end-to-end, deploys the adapter, and queries it.
 
 ## Architecture
 
@@ -24,7 +24,7 @@ LLMflow is an internal ML platform that manages the complete lifecycle of large 
                                        │
                               ┌────────▼────────┐
                               │ Inference Server │
-                              │ A/B │ Batch │ $  │
+                              │ load │ A/B │ $  │
                               └────────┬────────┘
                                        │
                               ┌────────▼────────┐
@@ -33,76 +33,75 @@ LLMflow is an internal ML platform that manages the complete lifecycle of large 
                               └─────────────────┘
 ```
 
-## Key Features
+## What works
 
-### Data Pipeline
-- **Dataset ingestion** — Upload CSV, JSONL, Parquet; auto-versioning with SHA-256 content hashing
-- **Split discipline** — Enforced train/val/test splits with holdout protection and leakage prevention
-- **Labeling UI** — Built-in annotation interface
+### Data
+- **Upload JSONL or CSV** — SHA-256 content hashing and immutable versions
+- **Split discipline** — Enforced train/val/test splits, row-hash leakage checks
+- **Data page** — List, create, upload, split, inspect hashes and row counts
 
 ### Training
-- **LoRA fine-tuning** — PEFT + Transformers with 4-bit QLoRA support
-- **Reproducibility controls** — Seed locking, config snapshots, dataset hash verification, library version logging, "re-run" button
-- **Experiment tracking** — MLflow integration with auto-logged params, metrics, and artifacts
-- **Hyperparameter sweeps** — Grid and random search
+- **LoRA fine-tuning** — PEFT + Transformers (optional 4-bit QLoRA on GPU)
+- **Reproducibility** — Seed locking, config snapshots, dataset hash check, re-run
+- **Hyperparameter sweep** — Grid or random over a param JSON, capped by max runs
+- **Experiment tracking** — MLflow params and metrics; model weights stored in MinIO
 - **Cost tracking** — GPU hours × rate per training run
 
 ### Evaluation
 - **Perplexity** on held-out test sets
-- **Task-specific metrics** — Classification F1, QA exact-match
-- **Self-consistency check** — N-sample generation to detect hallucinations
-- **Human evaluation** — Side-by-side blind comparison with Likert scales
-- **Split enforcement** — API rejects evals on train splits; cross-checks hashes for leakage
+- **QA exact-match** and **classification F1** (macro)
+- **Self-consistency**
+- **Human ratings** from the playground (stars + dimension on a real inference log)
+- **Split enforcement** — API rejects evals on train splits; hash mismatch blocks leakage
 
 ### Serving
-- **Inference server** — Request batching, response caching (Redis), SSE streaming
-- **A/B testing** — Traffic splitting by percentage across model versions
-- **Model registry** — Version, stage (staging/production/archived), lineage tracking
-- **Model lineage graph** — Visual DAG: Dataset → Experiment → Run → Model → Deployment
-- **Playground** — Interactive chat with deployed models
+- **Deploy a completed run** — Inference downloads the MinIO artifact and loads the PEFT model
+- **A/B traffic %** — Registered on the inference router when you deploy
+- **Redis response cache**
+- **Playground** — Prompts the loaded model; rate the completion afterward
+- **Registry stages** — Staging / Production / Archived
+- **Stop** — Unloads the model and zeros traffic
+- **Lineage chain** — Dataset → Experiment → Run → Artifact → Deployment
+- **Inference logs + cost** — Each completion writes a log and tokens × rate
 
 ### Monitoring
-- **Prometheus + Grafana** — Request latency (p50/p95/p99), throughput, tokens/sec
-- **Cost dashboard** — Token usage per model, GPU hours, cost per 1k requests
-- **Quality metrics** — Aggregated human ratings over time
+- Prometheus scrapes backend and inference `/metrics`
+- Grafana provisions a Prometheus datasource and the bundled dashboard
+- Cost APIs aggregate training GPU cost and inference token cost from logs
+- Monitoring page charts cost and latency (Recharts); error rate is placeholders / total logs
 
-### Production
-- **CI/CD** — GitHub Actions for lint, test, build, push
-- **Kubernetes manifests** — Deployments, Services, Ingress, ConfigMaps, Secrets
-- **Rate limiting** — Sliding-window in-memory rate limiter
-- **API key auth** — Header-based authentication
-- **Structured logging** — JSON logs via structlog
+### Infra
+- Docker Compose, GitHub Actions (lint/test/build), in-memory rate limiter, JSON logs via structlog
 
 ## Tech Stack
 
 | Layer | Technologies |
 |-------|-------------|
 | Backend | Python 3.11, FastAPI, SQLAlchemy 2.0, Alembic, Celery, Pydantic v2 |
-| ML | PyTorch, HuggingFace Transformers, PEFT, bitsandbytes, scikit-learn |
-| Tracking | MLflow |
-| Frontend | Next.js 14, TypeScript, Tailwind CSS, Recharts, Lucide Icons |
+| ML | PyTorch, HuggingFace Transformers, PEFT |
+| Tracking | MLflow (experiments), MinIO (weights) |
+| Frontend | Next.js 16, TypeScript, Tailwind CSS, Lucide Icons, Recharts |
 | Database | PostgreSQL 16, Redis 7, MinIO (S3-compatible) |
 | Monitoring | Prometheus, Grafana |
-| Infra | Docker Compose, Kubernetes, GitHub Actions |
+| Infra | Docker Compose, GitHub Actions |
 
 ## One-Command Demo
-
-Run the full pipeline end-to-end with a single command:
 
 ```bash
 make demo
 ```
 
 This will:
-1. Start all 10 services (Postgres, Redis, MinIO, MLflow, Backend, Worker, Inference, Frontend, Prometheus, Grafana)
+1. Start Compose services (Postgres, Redis, MinIO, MLflow, Backend, Worker, Inference, Frontend, Prometheus, Grafana)
 2. Run database migrations
 3. Upload a 40-row instruction-following dataset
 4. Create train/val/test splits with leakage verification
-5. Fine-tune GPT-2 with LoRA for 1 epoch (real training, real loss curves)
+5. Fine-tune GPT-2 with LoRA for 1 epoch
 6. Run perplexity evaluation on the held-out test split
-7. Query the inference server
+7. Deploy the run and load the adapter on the inference server
+8. Query the loaded model
 
-You'll see real training metrics, model artifacts in MinIO, and experiment tracking in MLflow.
+You'll see real training metrics, artifacts in MinIO, a live completion, and experiment tracking in MLflow.
 
 ## Quick Start
 
@@ -125,8 +124,6 @@ cp .env.example .env
 make up-build
 # or: docker compose up -d --build
 ```
-
-This starts: PostgreSQL, Redis, MinIO, MLflow, Backend API, Celery Worker, Inference Server, Frontend, Prometheus, Grafana.
 
 ### 3. Run database migrations
 
@@ -163,9 +160,9 @@ LLMflow/
 │   └── tests/
 ├── inference/               # Separate inference server
 │   └── app/
-│       ├── engine/         # Batching, caching
+│       ├── engine/         # Caching
 │       ├── router/         # A/B traffic routing
-│       └── models/         # Model loading
+│       └── models/         # Model loading (MinIO + PEFT)
 ├── frontend/                # Next.js dashboard
 │   └── src/
 │       ├── app/            # Pages (dashboard, data, training, eval, serving, monitoring)
@@ -173,11 +170,9 @@ LLMflow/
 │       ├── lib/            # API client, utilities
 │       └── types/          # TypeScript interfaces
 ├── demo/                    # One-command demo
-│   ├── alpaca_demo.jsonl   # 40-row instruction-following dataset
-│   └── run_demo.py         # Drives full pipeline via API
+│   ├── alpaca_demo.jsonl
+│   └── run_demo.py
 ├── infra/                   # Prometheus, Grafana configs
-├── k8s/                     # Kubernetes manifests
-├── .github/workflows/       # CI/CD pipelines
 ├── docker-compose.yml
 ├── Makefile
 └── README.md
@@ -202,9 +197,13 @@ LLMflow/
 - `POST /api/v1/evaluations/ratings` — Submit human rating
 
 ### Serving
-- `POST /api/v1/serving/deployments` — Deploy model
-- `GET /api/v1/serving/lineage/{id}` — Model lineage graph
+- `POST /api/v1/serving/deployments` — Deploy a completed run (loads the model)
+- `POST /api/v1/serving/inference-logs` — Record a completion (used by inference)
+- `GET /api/v1/serving/lineage/{id}` — Lineage chain
 - `POST /v1/completions` — Inference (on inference server)
+- `POST /admin/models/load` — Load artifact (inference server)
+- `POST /admin/models/unload` — Unload model (inference server)
+- `PATCH /api/v1/serving/deployments/{id}` — Traffic, status, or stage
 
 ### Monitoring
 - `GET /api/v1/monitoring/costs/summary` — Cost breakdown

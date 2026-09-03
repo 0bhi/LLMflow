@@ -2,6 +2,8 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from prometheus_client import generate_latest
+from starlette.responses import Response
 
 from app.api.v1.router import api_router
 from app.core.config import settings
@@ -41,3 +43,8 @@ app.include_router(api_router)
 @app.get("/health")
 async def health():
     return {"status": "healthy", "version": settings.version}
+
+
+@app.get("/metrics")
+async def metrics():
+    return Response(content=generate_latest(), media_type="text/plain")

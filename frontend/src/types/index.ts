@@ -61,7 +61,7 @@ export interface TrainingRun {
 export interface Evaluation {
   id: number;
   training_run_id: number;
-  eval_type: "perplexity" | "task_accuracy" | "self_consistency" | "human";
+  eval_type: "perplexity" | "task_accuracy" | "classification" | "self_consistency" | "human";
   dataset_split_id: number;
   results_json: Record<string, any> | null;
   score: number | null;
